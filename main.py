@@ -55,8 +55,14 @@ def stateactions(currentstate):
     # swap for moveCounter % n
     movecounter = currentstate[-1]
     curplayerindex = movecounter % numplayers
-
     playerhands = currentstate[curplayerindex]
+
+    # if playerhands = (0,0), they are eliminated, just skip and increment term
+    if playerhands == (0,0):
+        newstate = currentstate.copy()
+        newstate[-1] += 1
+        return [newstate]
+    
     candidate_swaps = VALID_SWAPS[playerhands]
     for cand in candidate_swaps:
         newstate = currentstate.copy()
@@ -66,4 +72,4 @@ def stateactions(currentstate):
     return newstatelist
 
 
-print(stateactions([(0,4),(1,1),4]))
+print(stateactions([(0,0),(1,1),4]))
