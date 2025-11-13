@@ -11,8 +11,8 @@ NUM_PLAYERS = 2 # number of players
 MAX_TURNS = 100 # maximum turns, maximum move is MAX_TURNS so the 100 moves are 0->1 to 99->100
 NUM_GAMES = 10000 # number of games simulated
 STEP_PENALTY = -0.01 # penalty for longer games, need to mess around with this
-ALPHA = 1
-GAMMA = 1
+ALPHA = 0.1
+GAMMA = 1.0
 
 
 # state will be n+1 length list where first n are 2d tuples
@@ -243,13 +243,10 @@ def runGame(qtable, epsilon, printresults):
             print(state)
         print("Winner: " + str(game_status))
 
-
-
-qtable = initializeQTable()
-runGame(qtable, 0.1, True)
-# d = qtable[tuple([(1,1),(1,3),0])]
-# for entry in d:
-#     print(str(entry) + ": " + str(d[entry]))
-
-# print(checkGameStatus([(0,0),(1,0),1]))
-
+def runTrials(num_trials):
+    qtable = initializeQTable()
+    for i in range(num_trials):
+        runGame(qtable, 0.1, False)
+    
+    # demonstrate a game after learning
+    runGame(qtable, 0.1, True)
