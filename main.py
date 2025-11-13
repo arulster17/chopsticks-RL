@@ -105,40 +105,65 @@ def stateactions(currentstate):
 
     return newstatelist
 
-# compute a dictionary of all states to actions+weights
-# keys: states
-# values: pairs of (newstates, weights)
-# initialize this to 1
+# compute a dictionary of all states to actions+weights, initialize weights to 1
+def initializeQTable():
+    # generate a list of all states using itertools
+    # for n players we want the cartesian product of n players and the move counter
+    all_hands = VALID_SWAPS.keys() # lazy trick lol
+    all_move_counters = list(range(0, maxturns))
+    lists = [all_hands]*numplayers + [all_move_counters]
 
-# generate a list of all states using itertools
-# for n players we want the cartesian product of n players and the move counter
+    product_iter = itertools.product(*lists)
+    all_states = [list(t) for t in product_iter]
 
-all_hands = VALID_SWAPS.keys() # lazy trick lol
-all_move_counters = list(range(0, maxturns))
-lists = [all_hands]*numplayers + [all_move_counters]
+    # create q table
+    # keys: states
+    # values: dict of (newstates, weights)
+    # need to convert states from list to tuples because you cannot hash lists
+    d = {}
+    for state in all_states: # for all states
+        state_tuple = tuple(state)
+        d[state_tuple] = {} # initialize weight dict
+        next_states = stateactions(state) # get all next states
+        statemap = d[state_tuple]
+        for ns in next_states: # for all next states
+            statemap[tuple(ns)] = 1 # set default weight to 1
+    return d
 
-# cartesian product
-product_iter = itertools.product(*lists)
-all_states = [list(t) for t in product_iter]
+# returns -3 if all eliminated somehow, -2 if maxturns reached, -1 if game is not over, else returns winner index
+# CURRENTLY DOES NOT CONSIDER MOVE COUNTER
+def checkGameStatus(currentstate):
+    numturns = currentstate[-1]
+    hands = currentstate[:-1]
 
-print(len(all_states))
+    foundalive = False
+    firstWinner = -1
+    for i,hand in enumerate(hands):
+        if hand != (0,0):
+            if foundalive == True:
+                # check if game is over by length
+                # having this here means that if a player wins on the last available move, they get the win
+                if numturns >= maxturns:
+                    return -2
+                return -1 # found two alive players, game not over
+            
+            # first alive player found
+            foundalive = True
+            firstWinner = i
 
-# create q table
-# need to convert states from list to tuples because you cannot hash lists
-qtable = {}
-for state in all_states: # for all states
-    state_tuple = tuple(state)
-    qtable[state_tuple] = {} # initialize weight dict
-    next_states = stateactions(state) # get all next states
-    statemap = qtable[state_tuple]
-    for ns in next_states: # for all next states
-        statemap[tuple(ns)] = 1 # set default weight to 1
+    # if somehow all players are eliminated
+    if not foundalive:
+        return -3
+    # if we get here, only 1 found alive, so they win, return firstWinner    
+    return firstWinner
+
+# qtable = initializeQTable()
 
 
+# d = qtable[tuple([(1,1),(1,3),0])]
+# for entry in d:
+#     print(str(entry) + ": " + str(d[entry]))
 
-# test [(1,1),(1,3),0]
-d = qtable[tuple([(1,1),(1,3),0])]
-for entry in d:
-    print(str(entry) + ": " + str(d[entry]))
+print(checkGameStatus([(0,0),(1,0),100]))
 
 #print(stateactions([(1,1),(1,0),0]))
