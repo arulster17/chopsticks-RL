@@ -53,7 +53,8 @@ def normalize(tuple):
         return (b,a)
 
 # list of states available from current state
-def getAllNextStates(current_state):
+def getAllNextStates(state):
+    current_state = state.copy()
     new_state_list = []
     # swap for moveCounter % n
     move_counter = current_state[-1]
