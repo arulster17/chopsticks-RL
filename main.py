@@ -9,7 +9,7 @@ import random
 
 NUM_PLAYERS = 2 # number of players
 MAX_TURNS = 100 # maximum turns, maximum move is MAX_TURNS so the 100 moves are 0->1 to 99->100
-NUM_GAMES = 10000 # number of games simulated
+NUM_TRIALS = 100000 # number of games simulated
 STEP_PENALTY = -0.01 # penalty for longer games, need to mess around with this
 ALPHA = 0.1
 GAMMA = 1.0
@@ -245,8 +245,26 @@ def runGame(qtable, epsilon, printresults):
 
 def runTrials(num_trials):
     qtable = initializeQTable()
-    for i in range(num_trials):
-        runGame(qtable, 0.1, False)
+    print("Starting Training!")
+    epsilon = 1
+    for i in range(1,num_trials+1):
+        if i % 100 == 0:
+            print(str(i) + " trials completed.")
+
+        runGame(qtable, epsilon, False)
+
+        # as we go through the trials we want to prioritize exploitation over exploration -> lower epsilon
+        # slowly decay epsilon
+        epsilon *= 0.999
+        epsilon = max(epsilon, 0.05) # dont let it get too low
     
-    # demonstrate a game after learning
-    runGame(qtable, 0.1, True)
+    # demonstrate a few games after learning, play best moves
+    print("Training Complete!")
+    for i in range(5):
+        runGame(qtable, 0.0, True)
+    
+    # return final table
+    return qtable
+
+
+runTrials(NUM_TRIALS)
