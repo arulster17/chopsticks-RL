@@ -9,7 +9,7 @@ import random
 
 NUM_PLAYERS = 2 # number of players
 MAX_TURNS = 100 # maximum turns, maximum move is MAX_TURNS so the 100 moves are 0->1 to 99->100
-NUM_TRIALS = 100000 # number of games simulated
+NUM_TRIALS = 10000000 # number of games simulated
 STEP_PENALTY = -0.01 # penalty for longer games, need to mess around with this
 ALPHA = 0.1
 GAMMA = 1.0
