@@ -9,9 +9,14 @@
 
 \maketitle
 \section{Problem Description}
-info about chopsticks here, what we are actually trying to do
+Chopsticks is a 2-player game played with hands and fingers. Each player starts with two hands, and one finger on each. In the game, each player attempts to eliminate the other's hands by utilizing two different kinds of moves. A player can attack another player's hand by adding the finger count on one of their own hands to one hand of the other player. If a hand exceeds a count of 4, it is considered dead. The player can also choose to swap values on their own hands, while preserving the sum of both hands' finger counts. For example, a player can choose to turn (3,2) into (1,4), preserving the total of 5. However, not all swaps are allowed. The game ends when one player has two dead hands, in which case the other wins.
+\\ Chopsticks has simple rules, but the complexity and number of states that arise is large. We aim to use reinforcement learning techniques (mainly Q-Learning) to create a strong AI. Additionally, we aim to extend the original game to have higher complexity, including adding a third player or a third hand.
 \section{Dataset Source}
-rules of the game, state-action size analysis
+The dataset for this project will be a simulation of the rules of chopsticks. Each state will contain the current player hands/counts, as well as who's turn it is. In the traditional game, we store this as a length 5 vector:
+$(p_{11},p_{12},p_{21},p_{22},w\in{1,2})$. The first two values denote the first player's hands, and the third/fourth values denote the second player's hand. 
+\\When a player attacks, they add their chosen hand's current value to another player's hand (e.g $p_{21}=p_{21}+p_{11}$). If the other player's hand then becomes 5 or greater, it is set to 0, denoting a dead hand.
+\\A player can also choose to swap values of their own hands. Any swap $(a,b) \to (c,d)$ where $0\le a,b,c,d \le 4$ and $a+b =c+d$ works, except for the identity swap $(a,b) \to (a,b)$ and the mirror swap $(a,b) \to (b,a)$.  
+\\After a player makes a move, the $w$ variable swaps values, indicating a change of turn. The game ends when the current player's hands contain counts of $(0,0)$, denoting a loss.
 \section{Methodology}
-q-learning, overall program loop, inference
+We will apply the Q-Learning algorithm to this problem. Each player will have their own individual Q-table
 \end{document}
