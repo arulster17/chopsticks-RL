@@ -16,7 +16,8 @@ The dataset for this project will be a simulation of the rules of chopsticks. Ea
 $(p_{11},p_{12},p_{21},p_{22},w\in{1,2})$. The first two values denote the first player's hands, and the third/fourth values denote the second player's hand. 
 \\When a player attacks, they add their chosen hand's current value to another player's hand (e.g $p_{21}=p_{21}+p_{11}$). If the other player's hand then becomes 5 or greater, it is set to 0, denoting a dead hand.
 \\A player can also choose to swap values of their own hands. Any swap $(a,b) \to (c,d)$ where $0\le a,b,c,d \le 4$ and $a+b =c+d$ works, except for the identity swap $(a,b) \to (a,b)$ and the mirror swap $(a,b) \to (b,a)$.  
-\\After a player makes a move, the $w$ variable swaps values, indicating a change of turn. The game ends when the current player's hands contain counts of $(0,0)$, denoting a loss.
+\\After a player makes a move, the $w$ variable swaps values, indicating a change of turn. The game ends when the current player's hands contain counts of $(0,0)$, denoting a loss. 
+\\By swapping $(a,b)$ if $a>b$, each player will have $15$ possible hands. With the turn counter, this becomes $15^n*n$ states given $n$ players. Each player can swap to at most 5 different pairs, and attack in $2*(2(n-1))=4n-4$ ways. For the 2-player case, this leads to $450$ states and between $4n-4$ and $4n+1$ actions per state.
 \section{Methodology}
-We will apply the Q-Learning algorithm to this problem. Each player will have their own individual Q-table
+We will apply the Q-Learning algorithm to this problem. Each player will have their own individual Q-table, and the algorithm will be run with the previously described states and actions. Only the terminal states (where one player wins/loses) will have a reward. In the 2-player game, the winning states receive a reward of 1, and the losing states will receive a reward of -1. All other states will have a reward of 0. Additionally, a discount factor of 0.999 will be applied, which should help the model try to end games faster.
 \end{document}
