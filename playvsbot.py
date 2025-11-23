@@ -48,27 +48,45 @@ Q = readQTable(qtable_filename)
 # you can go second :)
 
 state = [(1,1), (1,1)]
-bot_goes_first = True
+user_goes_first = True
+
+if user_goes_first:
+    # show user the gamestate
+    printGameState(state)
+    legal_actions = env.legalActions(state)
+
+    # get user move
+    user_action = "weewoo"
+    first_move = True
+    while user_action not in legal_actions:
+        if not first_move:
+            print("Invalid move!")
+        print("Valid actions: " + ", ".join(legal_actions))
+        # print("Your move:", end = "")
+        user_action = input("Your move: ")
+        first_move = False
+    
+    # play user move
+    state = env.step(state, user_action)
 
 while True:
-    if bot_goes_first:
-        # show user the gamestate, need to flip since bot POV
-        printGameState([state[1], state[0]])
+    # show user the gamestate, need to flip since bot POV
+    printGameState([state[1], state[0]])
 
-        # if 0,0 then user wins
-        if env.isGameOver(state):
-            print("You win!")
-            break
+    # if 0,0 then user wins
+    if env.isGameOver(state):
+        print("You win!")
+        break
 
-        # pretend to think
-        time.sleep(1)
-        print("Choppy is thinking...")
-        time.sleep(2)
+    # pretend to think
+    time.sleep(1)
+    print("Choppy is thinking...")
+    time.sleep(2)
 
-        # let bot play a move
-        bot_action = chooseAction(Q, state)
-        print("Choppy's move: " + bot_action)
-        state = env.step(state, bot_action)
+    # let bot play a move
+    bot_action = chooseAction(Q, state)
+    print("Choppy's move: " + bot_action)
+    state = env.step(state, bot_action)
 
     # show user the gamestate
     printGameState(state)
