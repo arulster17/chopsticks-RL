@@ -5,6 +5,7 @@ import time
 import sys
 
 import constants as C
+import env
 
 # states [(a,b),(c,d)], where (a,b) is your hand, (c,d) is opp hand, a <= b, c <= d
 # actions
@@ -35,74 +36,17 @@ import constants as C
 #       (0,4) : (2,2)
 
 
-# helper to make geq 5 -> 0 and ensure lhs ≤ rhs
-def normalize(tuple):
-    (a,b) = tuple
-    if a >= 5:
-        a = 0
-    if b >= 5:
-        b = 0
-    if a <= b:
-        return (a,b)
-    else:
-        return (b,a)
-
-
-
-#state [(a,b),(c,d)] -> (a,b) current hands, (c,d) other hands
-# list of legal actions at current state
-def legalActions(state):
-    (a,b) = state[0]
-    (c,d) = state[1]
-    legal_actions = []
-
-    # check each action
-
-    # ATTACK_LL
-    if a != 0 and c != 0:
-        legal_actions.append("ATTACK_LL")
-
-    # ATTACK_LR
-    if a != 0 and d != 0:
-        legal_actions.append("ATTACK_LR")
-
-    # ATTACK_RL
-    if b != 0 and c != 0:
-        legal_actions.append("ATTACK_RL")
-
-    # ATTACK_RR
-    if b != 0 and d != 0:
-        legal_actions.append("ATTACK_RR")
-
-    # SWAP_L2R
-    if a >= 2 and b <= 2:
-        legal_actions.append("SWAP_L2R")
-
-    # SWAP_L1R
-    if a >= 1 and b <= 3:
-        legal_actions.append("SWAP_L1R")
-
-    # SWAP_R1L
-    if b >= 1 and a + 2 <= b: # check R can give 1 and L <= R after
-        legal_actions.append("SWAP_R1L")
-
-    # SWAP_R2L
-    if b >= 2 and a + 4 <= b: # check R can give 2 and L <= R after
-        legal_actions.append("SWAP_R2L")
-    
-    return legal_actions
-
 # occasionally force random move to cover more cases in self-play
 def chooseActionTraining(Q, state, epsilon):
     state_tuple = tuple(state)
-    actions = legalActions(state_tuple)
+    actions = env.legalActions(state_tuple)
     if random.random() < C.P_RANDOM_MOVE:
         return random.choice(actions)
 
     return chooseAction(Q, state, epsilon)
 
 def chooseAction(Q, state, epsilon):
-    legal_actions = legalActions(state)
+    legal_actions = env.legalActions(state)
     if (len(legal_actions) == 0):
         raise ValueError(f"Called chooseAction with state {state}, which has no legal actions")
     if random.random() < epsilon:
@@ -114,44 +58,6 @@ def chooseAction(Q, state, epsilon):
         best_exp_val = max(Q[(state_tuple, action)] for action in legal_actions)
         best_actions = [action for action in legal_actions if Q[(state_tuple, action)] == best_exp_val]
         return random.choice(best_actions)
-
-# apply action to state, flip to indicate new turn
-def step(state, action):
-    legal_actions = legalActions(state)
-    if action not in legal_actions:
-        raise ValueError(f"Illegal action {action} in state {state}")
-
-    (a,b) = state[0]
-    (c,d) = state[1]
-
-    cur_new = (a,b)
-    opp_new = (c,d)
-    match action:
-        case "ATTACK_LL":
-            opp_new = normalize((a+c, d))
-        case "ATTACK_LR":
-            opp_new = normalize((c, a+d))
-        case "ATTACK_RL":
-            opp_new = normalize((b+c, d))
-        case "ATTACK_RR":
-            opp_new = normalize((c, b+d))
-        case "SWAP_L2R":
-            cur_new = normalize((a-2, b+2))
-        case "SWAP_L1R":
-            cur_new = normalize((a-1, b+1))
-        case "SWAP_R1L":
-            cur_new = normalize((a+1, b-1))
-        case "SWAP_R2L":
-            cur_new = normalize((a+2, b-2))
-        case _:
-            raise ValueError(f"Unrecognized action {action} in state {state}")
-
-        
-    return [opp_new, cur_new]
-        
-
-def isGameOver(state):
-    return state[0] == (0,0)
 
 def computeReward(next_state, turns):
     if next_state[0] == (0,0):   # opponent dead -> after swap, cur player dead
@@ -169,13 +75,13 @@ def run_game(Q, epsilon):
     state = [(1,1), (1,1)]
     path = []
     for turn in range(1, C.MAX_TURNS+1):
-        if isGameOver(state):
+        if env.isGameOver(state):
             break
 
         # USE ACTION CHOICE THAT FORCES A FEW MORE RANDOM CHOICES
         # THIS IS KINDA LIKE INCREASING EPSILON
         action = chooseActionTraining(Q, state, epsilon)
-        new_state = step(state, action)
+        new_state = env.step(state, action)
         reward = computeReward(new_state, turn)
         path.append((state, action, reward, new_state))
         state = new_state
@@ -185,7 +91,7 @@ def run_game(Q, epsilon):
 def update_Q_from_path(Q, path):
     # iterate backwards
     for (state, action, reward, new_state) in reversed(path):
-        if isGameOver(new_state):
+        if env.isGameOver(new_state):
             # if terminal then set winner
             target = reward
         else:
@@ -198,7 +104,7 @@ def update_Q_from_path(Q, path):
             # Q(s,a) = r + γ(-max_a' Q(s',a'))
             # reverses the bellman in a way from what i understand
             # this would be good to write in our milestone
-            target = reward - C.GAMMA*max(Q[(tuple(new_state), next_action)] for next_action in legalActions(new_state))
+            target = reward - C.GAMMA*max(Q[(tuple(new_state), next_action)] for next_action in env.legalActions(new_state))
 
         # Q update
         # terminal
