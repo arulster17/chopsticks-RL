@@ -4,6 +4,7 @@ import csv
 import time
 import sys
 
+import constants as C
 
 # states [(a,b),(c,d)], where (a,b) is your hand, (c,d) is opp hand, a <= b, c <= d
 # actions
@@ -46,13 +47,7 @@ def normalize(tuple):
     else:
         return (b,a)
 
-# don't think this is ever used but whatever lol
-ALL_ACTIONS = ["ATTACK_LL", "ATTACK_LR", "ATTACK_RL", "ATTACK_RR",
-                "SWAP_L2R", "SWAP_L1R", "SWAP_R1L", "SWAP_R2L"]
 
-ALPHA = 0.1
-GAMMA = 1.0
-MAXTURNS = 100
 
 #state [(a,b),(c,d)] -> (a,b) current hands, (c,d) other hands
 # list of legal actions at current state
@@ -97,13 +92,11 @@ def legalActions(state):
     
     return legal_actions
 
-
-P_RANDOM_MOVE = 0.2
 # occasionally force random move to cover more cases in self-play
 def chooseActionTraining(Q, state, epsilon):
     state_tuple = tuple(state)
     actions = legalActions(state_tuple)
-    if random.random() < P_RANDOM_MOVE:
+    if random.random() < C.P_RANDOM_MOVE:
         return random.choice(actions)
 
     return chooseAction(Q, state, epsilon)
@@ -160,28 +153,22 @@ def step(state, action):
 def isGameOver(state):
     return state[0] == (0,0)
 
-
-STEP_PENALTY = -0.01
-
-# precompute speed bonus
-SPEED_BONUS_PARAM = 0.5
-SPEED_BONUS = [(SPEED_BONUS_PARAM * (1.0 - turn / MAXTURNS)) for turn in range(0, MAXTURNS + 1)]
 def computeReward(next_state, turns):
     if next_state[0] == (0,0):   # opponent dead -> after swap, cur player dead
         # punish fast losses and reward fast wins
-        return 1.0 + SPEED_BONUS[turns]
+        return 1.0 + C.SPEED_BONUS[turns]
         #return 1.0
     # can't happen?
     # if next_state[1] == (0,0):   # you dead -> after swap, opponent is dead
     #     return -1.0
-    if turns >= MAXTURNS:
+    if turns >= C.MAX_TURNS:
         return 0.0
-    return STEP_PENALTY
+    return C.STEP_PENALTY
 
 def run_game(Q, epsilon):
     state = [(1,1), (1,1)]
     path = []
-    for turn in range(1, MAXTURNS+1):
+    for turn in range(1, C.MAX_TURNS+1):
         if isGameOver(state):
             break
 
@@ -211,14 +198,14 @@ def update_Q_from_path(Q, path):
             # Q(s,a) = r + γ(-max_a' Q(s',a'))
             # reverses the bellman in a way from what i understand
             # this would be good to write in our milestone
-            target = reward - GAMMA*max(Q[(tuple(new_state), next_action)] for next_action in legalActions(new_state))
+            target = reward - C.GAMMA*max(Q[(tuple(new_state), next_action)] for next_action in legalActions(new_state))
 
         # Q update
         # terminal
         # Q[s,a] = Q[s,a] + α(r - Q[s,a])
         # nonterminal
         # Q[s,a] = Q[s,a] + α(r - max_a' Q[s',a'] - Q[s,a])
-        Q[(tuple(state), action)] += ALPHA * (target - Q[(tuple(state), action)])
+        Q[(tuple(state), action)] += C.ALPHA * (target - Q[(tuple(state), action)])
 
 
 def run_trials(num_trials, Q):
@@ -240,29 +227,13 @@ def writeQTableToFile(Q, filename):
     # easy to do with map to get hands -> (0,14)
     # each row will represent actions for the state
     # illegal actions will be written as 0
-    hand_map = {
-        0  : (0,0),
-        1  : (0,1),
-        2  : (0,2),
-        3  : (0,3),
-        4  : (0,4),
-        5  : (1,1),
-        6  : (1,2),
-        7  : (1,3),
-        8  : (1,4),
-        9  : (2,2),
-        10 : (2,3),
-        11 : (2,4),
-        12 : (3,3),
-        13 : (3,4),
-        14 : (4,4)
-    }
-    header = ["STATE_ID"] + ALL_ACTIONS
+
+    header = ["STATE_ID"] + C.ALL_ACTIONS
     data = []
     for state_id in range(225):
         datapoint = [state_id]
-        state = [hand_map[state_id % 15], hand_map[state_id // 15]]
-        for action in ALL_ACTIONS:
+        state = [C.HAND_MAP[state_id % 15], C.HAND_MAP[state_id // 15]]
+        for action in C.ALL_ACTIONS:
             datapoint.append(Q[(tuple(state), action)])
         data.append(datapoint)
 
