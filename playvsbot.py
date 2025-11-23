@@ -2,6 +2,7 @@ import sys
 import csv
 from collections import defaultdict
 import random
+import time
 
 import constants as C
 import env
@@ -33,7 +34,7 @@ def printGameState(state):
     cur_hands = state[0]
     opp_hands = state[1]
 
-    print(f"BOT: {opp_hands[0]} {opp_hands[1]}\n\nYOU: {cur_hands[0]} {cur_hands[1]}")
+    print(f"----------\nBOT: {opp_hands[0]} {opp_hands[1]}\n\nYOU: {cur_hands[0]} {cur_hands[1]}\n----------")
 
 if len(sys.argv) != 2:
     print("Usage: python playvsbot.py <path_to_Q_table_csv>")
@@ -41,12 +42,53 @@ if len(sys.argv) != 2:
 
 qtable_filename = sys.argv[1]
 Q = readQTable(qtable_filename)
-printGameState([(1,3),(2,4)])
 
 
 # simulate a game
 # you can go second :)
+
 state = [(1,1), (1,1)]
+bot_goes_first = True
+
 while True:
-    # let bot play a move
-    state = 3
+    if bot_goes_first:
+        # show user the gamestate, need to flip since bot POV
+        printGameState([state[1], state[0]])
+
+        # if 0,0 then user wins
+        if env.isGameOver(state):
+            print("You win!")
+            break
+
+        # pretend to think
+        time.sleep(1)
+        print("Choppy is thinking...")
+        time.sleep(2)
+
+        # let bot play a move
+        bot_action = chooseAction(Q, state)
+        print("Choppy's move: " + bot_action)
+        state = env.step(state, bot_action)
+
+    # show user the gamestate
+    printGameState(state)
+    legal_actions = env.legalActions(state)
+
+    # if 0,0 then user loses
+    if env.isGameOver(state):
+        print("Choppy wins!")
+        break
+
+    # get user move
+    user_action = "weewoo"
+    first_move = True
+    while user_action not in legal_actions:
+        if not first_move:
+            print("Invalid move!")
+        print("Valid actions: " + ", ".join(legal_actions))
+        # print("Your move:", end = "")
+        user_action = input("Your move: ")
+        first_move = False
+    
+    # play user move
+    state = env.step(state, user_action)
