@@ -9,8 +9,8 @@ import random
 
 NUM_PLAYERS = 2 # number of players
 MAX_TURNS = 100 # maximum turns, maximum move is MAX_TURNS so the 100 moves are 0->1 to 99->100
-NUM_TRIALS = 10000000 # number of games simulated
-STEP_PENALTY = -0.01 # penalty for longer games, need to mess around with this
+NUM_TRIALS = 100000 # number of games simulated
+STEP_PENALTY = -0.0 # penalty for longer games, need to mess around with this
 ALPHA = 0.1
 GAMMA = 1.0
 
@@ -64,14 +64,14 @@ def normalize(tuple):
 def getAllNextStates(current_state):
     new_state_list = []
     # swap for moveCounter % n
-    move_counter = current_state[-1]
-    cur_player_index = move_counter % NUM_PLAYERS
+    cur_player_index = current_state[-1]
+    new_turn = (cur_player_index + 1) % NUM_PLAYERS
     player_hands = current_state[cur_player_index]
 
     # if player_hands = (0,0), they are eliminated, just skip and increment term
     if player_hands == (0,0):
         new_state = current_state.copy()
-        new_state[-1] += 1
+        new_state[-1] = new_turn
         return [new_state]
     
     # add swaps
@@ -79,7 +79,7 @@ def getAllNextStates(current_state):
     for cand in candidate_swaps:
         new_state = current_state.copy()
         new_state[cur_player_index] = cand
-        new_state[-1] += 1
+        new_state[-1] = new_turn
         new_state_list.append(new_state)
 
     # add attacks
@@ -110,7 +110,7 @@ def getAllNextStates(current_state):
         for cand in candidate_atks:
             new_state = current_state.copy()
             new_state[i] = cand
-            new_state[-1] += 1
+            new_state[-1] = new_turn
             new_state_list.append(new_state)
 
     return new_state_list
@@ -120,8 +120,8 @@ def initializeQTable():
     # generate a list of all states using itertools
     # for n players we want the cartesian product of n players and the move counter
     all_hands = VALID_SWAPS.keys() # lazy trick lol
-    all_move_counters = list(range(0, MAX_TURNS))
-    lists = [all_hands]*NUM_PLAYERS + [all_move_counters]
+    all_turn_counters = list(range(0, NUM_PLAYERS))
+    lists = [all_hands]*NUM_PLAYERS + [all_turn_counters]
 
     product_iter = itertools.product(*lists)
     all_states = [list(t) for t in product_iter]
@@ -141,12 +141,11 @@ def initializeQTable():
     return qtable
 
 # returns -3 if all eliminated somehow, -2 if MAX_TURNS reached, -1 if game is not over, else returns winner index
-def checkGameStatus(current_state):
-    num_turns = current_state[-1]
+def checkGameStatus(current_state, move_counter):
     hands = current_state[:-1]
 
     # if past last turn
-    if num_turns > MAX_TURNS:
+    if move_counter > MAX_TURNS:
         return -2
 
     found_alive = False
@@ -157,7 +156,7 @@ def checkGameStatus(current_state):
                 # check if game is over by length
                 # having this here means that if a player wins on the last available move, they get the win
                 # not sure if this check is actually necessary
-                if num_turns == MAX_TURNS:
+                if move_counter == MAX_TURNS:
                     return -2
                 return -1 # found two alive players, game not over
             
@@ -172,7 +171,7 @@ def checkGameStatus(current_state):
     return first_winner
 
 # get next state using epsilon greedy 
-def getNextState(qtable, current_state, epsilon):
+def getNextState(qtable, current_state, epsilon, verbose):
     # pick highest with probability 1-epsilon
     # pick random otherwise
     next_weights = qtable[tuple(current_state)]
@@ -185,22 +184,26 @@ def getNextState(qtable, current_state, epsilon):
     else:
         # pick best
         best_weight = max(cand_weights)
+        if verbose:
+            print("best_weight is " + str(best_weight))
         best_states = [s for s,w in next_weights.items() if w == best_weight]
         # pick randomly from one of the best
         chosen_state = random.choice(best_states)
 
     return list(chosen_state)
 
-def computeReward(old_state, new_state):
-    game_status = checkGameStatus(new_state)
+def computeReward(old_state, new_state, move_counter):
+    game_status = checkGameStatus(new_state, move_counter)
     current_player = old_state[-1] % NUM_PLAYERS
 
-    if game_status in {-1,-2,-3}: # game not over / draw / all eliminated somehow
-        base = 0.0
+    if game_status == -1:
+        return 0.001
+    elif game_status in {-2,-3}: # game not over / draw / all eliminated somehow
+        base = -0.5 + STEP_PENALTY
     else: # someone won, was it me?
-        base = 1.0 if game_status == current_player else -1.0
+        base = 1.0+STEP_PENALTY if game_status == current_player else -1.0
     
-    return base + STEP_PENALTY
+    return base
 
 def updateQtable(qtable, old_state, next_state, reward):
     os = tuple(old_state)
@@ -221,21 +224,24 @@ def runGame(qtable, epsilon, printresults):
     # set initial state
     state = [(1,1)]*NUM_PLAYERS + [0]
     game_path = [state]
-    game_status = checkGameStatus(state)
-
+    move_counter = 0
+    game_status = checkGameStatus(state, move_counter)
     while(game_status == -1): # until game end
         # choose next state
-        next_state = getNextState(qtable, state, epsilon)
+        next_state = getNextState(qtable, state, epsilon, printresults)
+
+        move_counter += 1
 
         # compute reward
-        reward = computeReward(state, next_state)
+        reward = computeReward(state, next_state, move_counter)
 
         # update q table
         updateQtable(qtable, state, next_state, reward)
 
         # move on
         state = next_state
-        game_status = checkGameStatus(state)
+        
+        game_status = checkGameStatus(state, move_counter)
         game_path.append(state)
     
     if (printresults):
