@@ -2,6 +2,7 @@ import random
 from collections import defaultdict
 import csv
 import time
+import sys
 
 
 # states [(a,b),(c,d)], where (a,b) is your hand, (c,d) is opp hand, a <= b, c <= d
@@ -96,7 +97,18 @@ def legalActions(state):
     
     return legal_actions
 
-def chooseAction(state, epsilon):
+
+P_RANDOM_MOVE = 0.2
+# occasionally force random move to cover more cases in self-play
+def chooseActionTraining(Q, state, epsilon):
+    state_tuple = tuple(state)
+    actions = legalActions(state_tuple)
+    if random.random() < P_RANDOM_MOVE:
+        return random.choice(actions)
+
+    return chooseAction(Q, state, epsilon)
+
+def chooseAction(Q, state, epsilon):
     legal_actions = legalActions(state)
     if (len(legal_actions) == 0):
         raise ValueError(f"Called chooseAction with state {state}, which has no legal actions")
@@ -166,14 +178,16 @@ def computeReward(next_state, turns):
         return 0.0
     return STEP_PENALTY
 
-def run_game(epsilon):
+def run_game(Q, epsilon):
     state = [(1,1), (1,1)]
     path = []
     for turn in range(1, MAXTURNS+1):
         if isGameOver(state):
             break
 
-        action = chooseAction(state, epsilon)
+        # USE ACTION CHOICE THAT FORCES A FEW MORE RANDOM CHOICES
+        # THIS IS KINDA LIKE INCREASING EPSILON
+        action = chooseActionTraining(Q, state, epsilon)
         new_state = step(state, action)
         reward = computeReward(new_state, turn)
         path.append((state, action, reward, new_state))
@@ -209,64 +223,69 @@ def update_Q_from_path(Q, path):
 
 def run_trials(num_trials, Q):
     start = time.time()
-    eps = 1.0
+    epsilon = 1.0
     for i in range(1, num_trials+1):
-        path = run_game(eps)
+        path = run_game(Q, epsilon)
         update_Q_from_path(Q, path) # run once
 
-        eps = max(0.05, eps * 0.999) # slowly decrease epsilon
+        epsilon = max(0.05, epsilon * 0.999) # slowly decrease epsilon
 
         if i % 10000 == 0:
             print(f"{i} runs completed. Time elapsed: {time.time() - start:.3f}s")
 
-    # demo game
-    # path = run_game(0)
-    # for move in path:
-    #     print(move)
+
+def writeQTableToFile(Q, filename):
+    # write q to a file to play later
+    # enumerate states
+    # easy to do with map to get hands -> (0,14)
+    # each row will represent actions for the state
+    # illegal actions will be written as 0
+    hand_map = {
+        0  : (0,0),
+        1  : (0,1),
+        2  : (0,2),
+        3  : (0,3),
+        4  : (0,4),
+        5  : (1,1),
+        6  : (1,2),
+        7  : (1,3),
+        8  : (1,4),
+        9  : (2,2),
+        10 : (2,3),
+        11 : (2,4),
+        12 : (3,3),
+        13 : (3,4),
+        14 : (4,4)
+    }
+    header = ["STATE_ID"] + ALL_ACTIONS
+    data = []
+    for state_id in range(225):
+        datapoint = [state_id]
+        state = [hand_map[state_id % 15], hand_map[state_id // 15]]
+        for action in ALL_ACTIONS:
+            datapoint.append(Q[(tuple(state), action)])
+        data.append(datapoint)
+
+    # write q table to file
+    with open(filename, 'w', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerow(header)
+        csv_writer.writerows(data)
+
+    print(f"Q-table data written to {filename}")
 
 
-Q = defaultdict(float)
-run_trials(1000000, Q)
+def main():
+    if len(sys.argv) != 3:
+        print("usage: python train.py <num_trials> <path_to_output_csv>")
+        sys.exit(1)
+
+    num_trials = int(sys.argv[1])
+    filename = sys.argv[2]
+    Q = defaultdict(float)
+    run_trials(num_trials, Q)
+    writeQTableToFile(Q, filename)
 
 
-
-# write q to a file to play later
-# enumerate states
-# easy to do with map to get hands -> (0,14)
-# each row will represent actions for the state
-# illegal actions will be written as 0
-hand_map = {
-    0  : (0,0),
-    1  : (0,1),
-    2  : (0,2),
-    3  : (0,3),
-    4  : (0,4),
-    5  : (1,1),
-    6  : (1,2),
-    7  : (1,3),
-    8  : (1,4),
-    9  : (2,2),
-    10 : (2,3),
-    11 : (2,4),
-    12 : (3,3),
-    13 : (3,4),
-    14 : (4,4)
-}
-header = ["STATE_ID"] + ALL_ACTIONS
-data = []
-for state_id in range(225):
-    datapoint = [state_id]
-    state = [hand_map[state_id % 15], hand_map[state_id // 15]]
-    for action in ALL_ACTIONS:
-        datapoint.append(Q[(tuple(state), action)])
-    data.append(datapoint)
-
-# write q table to file
-filename = 'qtable.csv'
-
-with open(filename, 'w', newline='') as csvfile:
-    csv_writer = csv.writer(csvfile)
-    csv_writer.writerow(header)
-    csv_writer.writerows(data)
-
-print(f"Q-table data written to {filename}")
+if __name__ == "__main__":
+    main()
