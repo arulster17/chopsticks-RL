@@ -1,0 +1,194 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{bm}
+
+\title{
+    \textbf{Milestone 2 Draft Report} \\
+    \large CSE 250A / 150A Final Project
+}
+\author{
+    Nikitha Maderamitla \quad
+    Arul Mathur \quad
+    Kai Wang \quad
+    Karim Barajas
+}
+\date{} 
+
+\begin{document}
+
+\maketitle
+
+\section{Problem Description}
+
+Chopsticks is a two-player hand game involving addition-based attacks and redistributions of finger counts. 
+Despite its simple rules, the game has a surprisingly large combinatorial state space and exhibits non-trivial strategic structure.
+Our objective is to investigate whether \textbf{model-free reinforcement learning}, specifically \textbf{tabular Q-Learning}, can learn a strong policy for Chopsticks through repeated self-play. \\ \\Each player begins with two hands, each initialized to value 1. 
+On each turn, a player may:
+\begin{itemize}
+    \item \textbf{Attack}: Add the value of one of their hands to an opponent's hand. Hands reaching 5 or more become 0 (dead).
+    \item \textbf{Swap}: Redistribute their total fingers across their two hands, preserving the sum. Identity and mirror swaps are disallowed.
+\end{itemize}A player loses when their hand configuration becomes $(0, 0)$.  
+Our project explores:
+\begin{itemize}
+    \item How to represent states efficiently using symmetry,
+    \item Whether Q-Learning can converge to meaningful strategic behavior,
+    \item How learned policies compare to baselines,
+\end{itemize}
+
+\section{Data Sourcing and Processing}
+
+All data is generated synthetically through simulation. Each training episode corresponds to a complete Chopsticks game between two agents, producing trajectories of the form:
+\[
+s_0, a_0, r_0, s_1, a_1, r_1, \dots, s_T
+\]
+
+\subsection{State Representation}
+
+We represent the game from the perspective of the \emph{current} player:
+\[
+\text{state} = [(h_{c1}, h_{c2}), (h_{o1}, h_{o2})]
+\]
+
+To reduce the state space, we apply normalization so that hands always satisfy:
+\[
+(h_{c1}, h_{c2}) = (\min, \max), \qquad (h_{o1}, h_{o2}) = (\min, \max)
+\]
+
+A compressed integer \texttt{STATE\_ID} is stored for Q-table exports.
+
+\subsection{Actions}
+
+We define 8 canonical actions:
+\begin{itemize}
+    \item \textbf{Attacks}: ATTACK\_LL, ATTACK\_LR, ATTACK\_RL, ATTACK\_RR
+    \item \textbf{Swaps}: SWAP\_L2R, SWAP\_L1R, SWAP\_R1L, SWAP\_R2L
+\end{itemize}
+
+Only actions legal under the game rules are allowed via \texttt{env.legalActions(state)}.
+
+\subsection{Transition Function}
+
+The environment implements:
+\begin{itemize}
+    \item \texttt{legalActions(state)}
+    \item \texttt{step(state, action)}: applies attack/swap logic, resolves deaths, and flips perspective
+    \item \texttt{isGameOver(state)}
+\end{itemize}
+
+The simulator is fully deterministic.
+
+\section{Modeling and Inference}
+
+We formulate Chopsticks as a two-player zero-sum Markov Decision Process (MDP).
+
+\subsection{MDP Components}
+
+\begin{itemize}
+    \item \textbf{States}: all valid normalized hand configurations
+    \item \textbf{Actions}: legal moves among the 8 canonical actions
+    \item \textbf{Transitions}: deterministic, based on game rules
+    \item \textbf{Rewards}:
+    \[
+    r =
+    \begin{cases}
+        +1 & \text{if the opponent loses} \\
+        -1 & \text{if the current player loses} \\
+        0 & \text{otherwise}
+    \end{cases}
+    \]
+\end{itemize}
+
+\subsection{Q-Learning Algorithm}
+
+We use standard tabular Q-Learning:
+\[
+Q(s,a) \leftarrow (1 - \alpha)\, Q(s,a) + \alpha\left[r + \gamma \max_{a'} Q(s',a')\right]
+\]
+
+We currently use:
+\begin{itemize}
+    \item Discount factor: $\gamma = 0.999$
+    \item Sparse terminal rewards
+    \item $\varepsilon$-greedy exploration with annealing
+\end{itemize}
+
+\subsection{Q-Table Export and Bot Interface}
+
+We periodically export a CSV of the form:
+\begin{verbatim}
+STATE_ID, ATTACK_LL, ATTACK_LR, ATTACK_RL, ATTACK_RR,
+SWAP_L2R, SWAP_L1R, SWAP_R1L, SWAP_R2L
+\end{verbatim}
+
+Our \texttt{playvsbot.py} script loads this table, reconstructs $Q(s,a)$, chooses greedy actions, and allows a human to play against the trained agent.
+
+\section{Experimental Setup and Preliminary Results}
+
+\subsection{Training Procedure}
+
+We train via self-play over a large number of episodes. Each episode:
+\begin{enumerate}
+    \item Begins at state $[(1, 1), (1, 1)]$
+    \item Alternates actions between agents
+    \item Terminates when $(0,0)$ is reached
+    \item Updates Q-values for the acting player
+\end{enumerate}
+
+We track:
+\begin{itemize}
+    \item win rate over time,
+    \item episode lengths,
+    \item convergence metrics.
+\end{itemize}
+
+\subsection{Baselines}
+
+We compare the learned policy against:
+\begin{itemize}
+    \item \textbf{Random Agent}
+    \item \textbf{Heuristic Agent} (if implemented)
+\end{itemize}
+
+Evaluation uses a purely greedy policy (no exploration).
+
+\subsection{Preliminary Observations}
+
+(Examples — you can replace with actual numbers later.)
+
+\begin{itemize}
+    \item The Q-learning agent begins outperforming the random baseline after sufficient training.
+    \item The agent learns to prioritize killing an opponent’s hand when possible.
+    \item Swaps emerge in later training as strategic repositioning moves.
+\end{itemize}
+
+\section{Conclusion and Next Steps}
+
+We have completed:
+\begin{itemize}
+    \item a full environment simulator,
+    \item a Q-learning implementation,
+    \item export/import of Q-tables,
+    \item a playable bot interface.
+\end{itemize}Next, we will:
+\begin{itemize}
+    \item finish large-scale training,
+    \item systematically evaluate win rates,
+    \item visualize convergence trends,
+    \item extend the game to 3 hands or 3 players.
+\end{itemize}
+
+\section{Reflections and Contributions}
+
+Each group member will include a personal reflection in the final report.
+
+\begin{itemize}
+    \item \textbf{Kai Wang}: 
+    \item \textbf{Arul Mathur}: 
+    \item \textbf{Nikitha Maderamitla}: 
+    \item \textbf{Karim Barajas}: 
+\end{itemize}
+
+\end{document}
+
