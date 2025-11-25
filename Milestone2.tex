@@ -1,0 +1,111 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{bm}
+
+\title{
+    \textbf{Milestone 2 Draft Report} \\
+    \large CSE 250A / 150A Final Project
+}
+\author{
+    Nikitha Maderamitla \quad
+    Arul Mathur \quad
+    Kai Wang \quad
+    Karim Barajas
+}
+\date{} 
+
+\begin{document}
+
+\maketitle
+
+\section{Problem Description}
+
+Chopsticks is a two-player hand game involving addition-based attacks and redistribution of finger counts. 
+\\Each player begins with two hands, each with a single finger held out, denoting a hand value of 1.
+On each turn, a player may:
+\begin{itemize}
+    \item \textbf{Attack}: Add the value of one of their hands to an opponent's hand. Hand values reaching 5 or more become 0 (dead).
+    \item \textbf{Swap}: Redistribute their total fingers across their two hands, preserving the sum. Identity and mirror swaps are disallowed.
+\end{itemize}A player loses when both of their hands are dead. 
+\\ Despite its simple rules, the game has a surprisingly large combinatorial state space and strategic complexity.
+Our objective is to investigate whether \textbf{reinforcement learning}, specifically \textbf{tabular Q-Learning}, can learn a strong policy for Chopsticks through repeated self-play. Additionally, we aim to extend the original game to have higher complexity, including adding a third player or a third hand.
+
+\section{Data Sourcing and Processing}
+
+Our data comes from a simulation of the rules of Chopsticks, which the model will use to learn about the game. Each training episode corresponds to a complete Chopsticks game between two agents.
+
+\subsection{State Representation}
+
+Each state will contain the current player hands/counts, as well as the current player's turn. In the traditional game, we store this as a length 5 vector:
+$(p_{11},p_{12},p_{21},p_{22},w\in{1,2})$. $p_{ij}$ denotes the $i$th player's $j$th hand.
+
+To reduce the state space, we sort each player's hands such that $p_{ij} \le p_{i(j+1)}$. For the traditional game, this reduces the number of states by a factor 
+
+Each state is compressed into an integer \texttt{STATE\_ID} to be used for Q-table exports.
+
+\subsection{Actions}
+
+For the traditional game, we define 8 canonical actions:
+\begin{itemize}
+    \item \textbf{Attacks}: ATTACK\_LL, ATTACK\_LR, ATTACK\_RL, ATTACK\_RR
+    \item \textbf{Swaps}: SWAP\_L2R, SWAP\_L1R, SWAP\_R1L, SWAP\_R2L
+\end{itemize}
+
+The attack actions correspond to using either a player's left or right hand, and attacking the other player's left or right hand. The swap actions correspond to a player's left or right hand giving $1$ to $2$ fingers to the other hand. Note that with the state optimization described previously, giving $3$ or more fingers is redundant.
+Not all of these actions will be legal for every state.
+
+\subsection{Transition Function}
+
+Since Chopsticks actions are deterministic, the transition function will be $1$ if the states and action are legal, and $0$ otherwise.
+
+\subsection{Reward}
+For the traditional game, we used a reward of $1$ if the player wins, and a reward of $-1$ if the player loses. All non-terminal states will have a reward of $0$.
+
+\section{Modeling and Inference}
+
+We formulate Chopsticks as a two-player zero-sum Markov Decision Process (MDP).
+
+\subsection{MDP Components}
+
+\begin{itemize}
+    \item \textbf{States}: previously described states
+    \item \textbf{Actions}: legal actions among the 8 previously described
+    \item \textbf{Transitions}: deterministic, 1 if legal/0 if illegal
+    \item \textbf{Rewards}:
+    \[
+    r =
+    \begin{cases}
+        +1 & \text{if the opponent loses} \\
+        -1 & \text{if the current player loses} \\
+        0 & \text{otherwise}
+    \end{cases}
+    \]
+\end{itemize}
+
+\subsection{Q-Learning Algorithm and Parameters}
+
+We use standard tabular Q-Learning:
+\[
+Q(s,a) \leftarrow (1 - \alpha)\, Q(s,a) + \alpha\left[r + \gamma \max_{a'} Q(s',a')\right]
+\]
+
+We currently use $\alpha = 0.1$ and $\gamma = 0.999$. Exploration of actions will be done using $\varepsilon$-greedy exploration with annealing. $\varepsilon$ starts at 1, and goes down by a factor of $0.999$ every training episode, clamping at a minimum of $0.05$.
+\\ Since this is a two-player game, each player will play the game from their own point of view from the same Q-table, with expected rewards mirrored. In order to generalize, we would need multiple Q-tables for each player.
+\section{Experimental Setup and Preliminary Results}
+
+After running the current training algorithm, the bot was able to find the optimal strategy for two-player Chopsticks. The AI is able to always win if playing as the second player, which is the theoretical best performance possible in Chopsticks.
+\\
+Training the model was very computationally inexpensive, as the two-player two-hand game does not have too many states. We expect the computational cost to go up significantly in generalizations of the game.
+
+\section{Conclusion and Next Steps}
+
+To-do list:
+\begin{itemize}
+    \item Add training metrics and graphs
+    \item Experiment with different hyperparameters to increase training speed/stability
+    \item Extend our current approach to a 3-player 3-hand game of Chopsticks.
+\end{itemize}
+
+\end{document}
