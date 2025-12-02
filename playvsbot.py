@@ -36,19 +36,61 @@ def printGameState(state):
 
     print(f"----------\nBOT: {opp_hands[0]} {opp_hands[1]}\n\nYOU: {cur_hands[0]} {cur_hands[1]}\n----------")
 
+
+
+def simulateGamesVsRandom(Q):
+    # simulate 1000 games vs random and return winrate
+    gamesWon = 0
+    gamesDrawn = 0
+    gamesLost = 0
+    for game in range(1000):
+        # simulate random game, start first half the times
+        state = [(1,1), (1,1)]
+        moves = 0
+        if game % 2 == 0:
+            # random start
+            # play random move
+            legal_actions = env.legalActions(state)
+            random_action = random.choice(legal_actions)
+            state = env.step(state, random_action)
+            moves += 1
+        while moves < C.MAX_TURNS:
+            ### check random wins
+            if env.isGameOver(state):
+                gamesLost += 1
+                break
+            # play bot move
+            bot_action = chooseAction(Q, state) # pick bot's best choice
+            state = env.step(state, bot_action)
+            moves += 1
+            if (moves >= C.MAX_TURNS):
+                break
+            # check bot win
+            if env.isGameOver(state):
+                gamesWon += 1
+                break
+            # play random move
+            legal_actions = env.legalActions(state)
+            random_action = random.choice(legal_actions)
+            state = env.step(state, random_action)
+            moves += 1
+        if moves == C.MAX_TURNS:
+            gamesDrawn += 1
+    return (gamesWon, gamesDrawn, gamesLost)
+
 if len(sys.argv) != 2:
     print("Usage: python playvsbot.py <path_to_Q_table_csv>")
     sys.exit(1)
 
 qtable_filename = sys.argv[1]
 Q = readQTable(qtable_filename)
-
+print(simulateGamesVsRandom(Q))
 
 # simulate a game
 # you can go second :)
 
 state = [(1,1), (1,1)]
-user_goes_first = True
+user_goes_first = False
 
 if user_goes_first:
     # show user the gamestate

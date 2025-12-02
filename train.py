@@ -3,6 +3,7 @@ from collections import defaultdict
 import csv
 import time
 import sys
+import copy
 
 import constants as C
 import env
@@ -114,17 +115,67 @@ def update_Q_from_path(Q, path):
         Q[(tuple(state), action)] += C.ALPHA * (target - Q[(tuple(state), action)])
 
 
+def simulateGamesVsPast(Q, Q_prev):
+    # simulate 1000 games vs random and return winrate
+    gamesWon = 0
+    gamesDrawn = 0
+    gamesLost = 0
+    for game in range(1000):
+        # simulate random game, start first half the times
+        state = [(1,1), (1,1)]
+        moves = 0
+        if game % 2 == 0:
+            # random start
+            # play prev move
+            prev_bot_action = chooseAction(Q, state, 0) # pick bot's best choice
+            state = env.step(state, prev_bot_action)
+            moves += 1
+        while moves < C.MAX_TURNS:
+            ### check random wins
+            if env.isGameOver(state):
+                gamesLost += 1
+                break
+            # play bot move
+            bot_action = chooseAction(Q, state, 0) # pick bot's best choice
+            state = env.step(state, bot_action)
+            moves += 1
+            if (moves >= C.MAX_TURNS):
+                break
+            # check bot win
+            if env.isGameOver(state):
+                gamesWon += 1
+                break
+            # play prev move
+            prev_bot_action = chooseAction(Q, state, 0) # pick bot's best choice
+            state = env.step(state, prev_bot_action)
+            moves += 1
+        if moves == C.MAX_TURNS:
+            gamesDrawn += 1
+    return (gamesWon, gamesDrawn, gamesLost)
+
+# euclidean distance
+def matrixDiff(Q, Q_prev):
+    ans = 0.0
+    for key in Q.keys():
+        ans += (Q[key] - Q_prev[key])**2
+    return ans**0.5
+
 def run_trials(num_trials, Q):
     start = time.time()
     epsilon = 1.0
+    Q_prev = Q.copy()
     for i in range(1, num_trials+1):
         path = run_game(Q, epsilon)
         update_Q_from_path(Q, path) # run once
 
         epsilon = max(0.05, epsilon * 0.999) # slowly decrease epsilon
-
-        if i % 10000 == 0:
+            
+        if i % (num_trials / 100) == 0:
             print(f"{i} runs completed. Time elapsed: {time.time() - start:.3f}s")
+            # compute difference to previous Q then update
+            print(matrixDiff(Q,Q_prev))
+            Q_prev = Q.copy()
+            
 
 
 def writeQTableToFile(Q, filename):
