@@ -3,6 +3,9 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{bm}
+\usepackage{caption}
+\usepackage{placeins}   % For FloatBarrier
+\usepackage{float}      % Optional: enables [H] figures
 
 \title{
     \textbf{Milestone 3 Draft Report} \\
@@ -22,115 +25,165 @@
 
 \section{Problem Description}
 
-Chopsticks is a two-player hand game involving addition-based attacks and redistribution of finger counts. 
-\\Each player begins with two hands, each with a single finger held out, denoting a hand value of 1.
+Chopsticks is a two-player hand game involving addition-based attacks and redistribution of finger counts.
+Each player begins with two hands, each with a single finger held out, denoting a hand value of 1.
+
 On each turn, a player may:
 \begin{itemize}
     \item \textbf{Attack}: Add the value of one of their hands to an opponent's hand. Hand values reaching 5 or more become 0 (dead).
-    \item \textbf{Swap}: Redistribute their total fingers across their two hands, preserving the sum. Identity and mirror swaps are disallowed. Players may use these swaps to bring a dead hand back into the game.
-\end{itemize}A player loses when both of their hands are dead. 
-\\ Despite its simple rules, the game has a surprisingly large combinatorial state space and strategic complexity.
-Our objective is to investigate whether \textbf{reinforcement learning}, specifically \textbf{tabular Q-Learning}, can learn a strong policy for Chopsticks through repeated self-play. Additionally, we aim to extend the original game to have higher complexity, including adding a third player or a third hand.
+    \item \textbf{Swap}: Redistribute their total fingers across their two hands, preserving the sum. Identity and mirror swaps are disallowed. Swaps may revive a dead hand.
+\end{itemize}
+
+A player loses when both of their hands are dead.  
+Despite simple rules, the state space is surprisingly large and strategic.  
+Our objective is to investigate whether \textbf{tabular Q-learning} can learn a strong Chopsticks strategy through repeated self-play. We later aim to generalize to 3+ player or 3+ hand versions.
 
 \section{Data Sourcing and Processing}
 
-Our data comes from a simulation of the rules of Chopsticks, which the model will use to learn about the game. Each training episode corresponds to a complete Chopsticks game between two agents.
+Our data comes entirely from simulation. Each training episode corresponds to a full Chopsticks game between two agents.
 
 \subsection{State Representation}
-Our initial setup was as follows: Each state will contain the current player hands/counts, as well as the current player's turn. In the traditional game, we store this as a length 5 vector:
-$(p_{11},p_{12},p_{21},p_{22},t\in{1,2})$. $p_{ij}$ denotes the $i$th player's $j$th hand, and $t$ represents the current player. To reduce the state space, we sort each player's hands such that $p_{ij} \le p_{i(j+1)}$. We may make this reduction as whether the left hand or right hand is smaller has no effect on the actual gameplay. For the traditional game, this reduces the number of states by a factor of about 2.8.
 
-However, a useful property we can use to simplify our state space is that the expected value/reward of a state for a player only depends on their current hands and the opponent's current hands. With this in mind, we can make a few improvements from the original state setup.
+We represent each state as $(p_{11},p_{12},p_{21},p_{22})$, where $p_{11},p_{12}$ are the current player's hands and $p_{21},p_{22}$ are the opponent's hands.  
+We sort each player's two hands so that the smaller value comes first.  
+This reduces symmetry and cuts the state space to 225 states.
 
-For one, we now represent the state as just $(p_{11},p_{12},p_{21},p_{22})$, where $p_{11}, p_{12}$ represent the \textit{current player's} hands and $p_{21}, p_{22}$ represent the \textit{non-current player's} hands. This takes advantage of the fact that $V^*(\{X,Y,Z,W,t\}) = V^*(\{Z,W,X,Y, 2-t\})$ from the viewpoint of an agent acting for the current move. This technique will not directly apply to 3+ players, although a similar, weaker version will still be applicable. It is important to note that this decision slightly diverges from traditional states in RL. This will be further explained through the definitions of the actions, rewards, and Q-learning updates.
+We use integer compression to map each state to a unique \texttt{STATE\_ID}.
 
-As before, we sort each player's hands such that $p_{ij} \le p_{i(j+1)}$. The final size of our state space is 225 states, an small improvement over our previous implementation of 450 states and a large improvement over the naive implementation with 1250 states. Such improvements are necessary to make expansions into 3+ players or 3+ hands a feasible task.
-
-Each state is compressed into an integer \texttt{STATE\_ID} to be used for Q-table exports.
-
-Due to the decisions we have made about our state representations, it is now most reasonable to make decisions based on the \textit{smaller} and \textit{larger} hands. However, it is more intuitive for human players familiar with the game to think of these as \textit{left} and \textit{right} hands. For this reason, within this paper we will use \textbf{left hand} and \textbf{smaller hand} interchangeably. Similarly, \textbf{right hand} and \textbf{larger/bigger hand} mean the same thing. In other words, given that whether the smaller count is on the left hand or right hand has no effect on the gameplay, we will assume it is on the left hand.
+Throughout this report, ``left hand'' means the smaller-value hand and ``right hand'' means the larger one.
 
 \subsection{Actions}
 
-For the traditional game, we define 8 canonical actions:
+We define 8 canonical actions:
 \begin{itemize}
     \item \textbf{Attacks}: ATTACK\_LL, ATTACK\_LR, ATTACK\_RL, ATTACK\_RR
     \item \textbf{Swaps}: SWAP\_L2R, SWAP\_L1R, SWAP\_R1L, SWAP\_R2L
 \end{itemize}
 
-The attack actions correspond to using either a player's left or right hand, and attacking the other player's left or right hand. The actions will also normalize the state afterwards (swap hands if $p_{i1} > p_{i2}$ after the attack, or set a hand $p_{ij}$ to 0 if $p_{ij} \geq 5$).
+Attacks add hand values and normalize (kill dead hands, reorder hands).  
+Swaps transfer 1–2 fingers between hands and normalize as well.
 
-The swap actions correspond to a player's left or right hand giving $1$ to $2$ fingers to the other hand. Note that with the state optimization described previously, giving $3$ or more fingers is redundant. Similarly to the attacks, these states will be normalized.
-
-Not all of these actions will be legal for every state.
-
-\textit{Each action is also responsible for "flipping" the state to represent that it is now the opponent's turn to play.}
-
-We will show an attack as an example.
-
-Consider if the action ATTACK\_LR was chosen at state $\{3,4,2,3\}$. This action will $(i)$ apply the attack: $\{3,4,2,\textbf{6}\}$, $(ii)$ normalize the state: $\{3,4,2,\textbf{6}\} \rightarrow \{3,4,2,\textbf{0}\} \rightarrow \{3,4,\textbf{0}, 2\}$, and $(iii)$ flip the state to represent that it is the opponent's turn: $\{0,2,3,4\}$.
+Because our representation always views the state from the perspective of the \textit{current player}, each action also flips the state to make the opponent the new current player.
 
 \subsection{Transition Function}
 
-Since Chopsticks actions are deterministic, the transition function will be $1$ if the states and action are legal, and $0$ otherwise.
+All transitions are deterministic:  
+$T(s,a,s') = 1$ if legal, and $0$ otherwise.
 
 \subsection{Reward}
-For the traditional game, we simply give a reward of $1$ if the player played a move that immediately resulted in a victory (both opponent hands were dead, and a reward of $0$ otherwise. All non-terminal states will have a reward of $0$. While at first glance, this may seem insufficient in punishing losing strategies and promoting stronger middlegame strategies, the modified Q-learning update we used actually made this a more than sufficient reward.
 
-We are experimenting with modifying the reward with a speed bonus or step penalty to promote faster games, but currently we believe the gamma decay in the Q-update is sufficient (more on this in section 3.2).
+A reward of $+1$ is given only if the action immediately kills both opponent hands.  
+Otherwise reward is $0$.  
+Despite seeming sparse, the modified Q-update (next section) makes this sufficient.
 
 \section{Modeling and Inference}
 
-We formulate Chopsticks as a two-player zero-sum Markov Decision Process (MDP).
-
-\subsection{MDP Components}
-
-\begin{itemize}
-    \item \textbf{States}: previously described states
-    \item \textbf{Actions}: legal actions among the 8 previously described
-    \item \textbf{Transitions}: deterministic, 1 if legal/0 if illegal
-    \item \textbf{Rewards}:
-    \[
-    r =
-    \begin{cases}
-        +1 & \text{if the opponent loses immediately after the action} \\
-        0 & \text{otherwise}
-    \end{cases}
-    \]
-\end{itemize}
+We formulate Chopsticks as a two-player zero-sum MDP with deterministic transitions.
 
 \subsection{Q-Learning Algorithm and Parameters}
 
-While we are using a Q-Learning approach, our update has one key difference from the standard update. Normally, the goal of Q-updates is to find the action/s that \textit{maximize} the expected reward. However, given that we are "giving" the next state to the opponent after playing our move, trying to maximize the expected reward would be equivalent to giving our opponent the best possible position, the exact opposite of what we want to do in a two-player competitive game. Thus, the goal of our Q-update is actually to \textit{minimize} the expected reward of the future state. This idea aligns more with the minimax algorithm, which is commonly used as the basis of bots for chess, checkers, and many more 2-player games. However, the techniques used for those games (such as game trees and evaluation functions) are far more complex than the scope of this project, so we will leave the comparison there.
+Because after every action we flip perspective to the opponent, maximizing future reward would incorrectly give the opponent the best position.  
+Thus our update instead \textit{minimizes} the opponent's best future reward:
 
-Thus, our Q-update was as follows:
+\[
+Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - \gamma \max_{a'} Q(s',a') - Q(s,a) \right].
+\]
 
-$$ Q(s,a) \leftarrow Q(s,a) + \alpha\left[r - \gamma \max_{a'} Q(s',a') -  Q(s,a)\right]$$
+For terminal states, the update simplifies to:
+\[
+Q(s,a) \leftarrow Q(s,a) + \alpha \left[ r - Q(s,a) \right].
+\]
 
-Note the negative sign inside of the target, which will promote picking a worse state for the opponent. For the terminal state, where playing the action ends the game, we simply apply the reward with no lookahead:
+This behaves like a minimax-style Q-update but without explicit game-tree search.
 
-$$ Q(s,a) \leftarrow Q(s,a) + \alpha\left[r -  Q(s,a)\right]$$
-
-% We use standard tabular Q-Learning:
-% \[
-% Q(s,a) \leftarrow Q(s,a) + \alpha\left[r + \gamma \max_{a'} Q(s',a')\right]
-% \]
-
-% We currently use $\alpha = 0.1$ and $\gamma = 0.999$. Exploration of actions will be done using $\varepsilon$-greedy exploration with annealing. $\varepsilon$ starts at 1, and goes down by a factor of $0.999$ every training episode, clamping at a minimum of $0.05$.
-% \\ Since this is a two-player game, each player will play the game from their own point of view from the same Q-table, with expected rewards mirrored. In order to generalize, we would need multiple Q-tables for each player.
-% \section{Experimental Setup and Preliminary Results}
-
-It is critical to note that this technique will not be possible in variations with 3 or more players. For such games, we will need to use a different approach, such as using multiple Q-tables or modifying our reward/update functions.
-
-After running the current training algorithm, the bot was able to find the optimal strategy for two-player Chopsticks. The AI is able to always win if playing as the second player, which is the theoretical best performance possible in Chopsticks.
-\\
-Training the model was very computationally inexpensive, as the two-player two-hand game does not have too many states. We expect the computational cost to go up significantly in generalizations of the game.
+After training, the agent consistently finds the known optimal strategy:  
+if it plays second, it always wins (the theoretically perfect outcome).
 
 \section{Experiments and Analysis}
 
-\\Graphs:
+\subsection{Graphs}
 
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{1e-1.png}
+    \caption{Q-learning convergence for $\alpha = 10^{-1}$}
+    \label{fig:1e-1}
+\end{figure}
 
-\subsection{}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{1e-3.png}
+    \caption{Q-learning convergence for $\alpha = 10^{-3}$}
+    \label{fig:1e-3}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{1e-5.png}
+    \caption{Q-learning convergence for $\alpha = 10^{-5}$}
+    \label{fig:1e-5}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{5e-1.png}
+    \caption{Q-learning convergence for $\alpha = 5\times 10^{-1}$}
+    \label{fig:5e-1}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{ep_length.png}
+    \caption{Episode length over training}
+    \label{fig:episode}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{q_conv.png}
+    \caption{Overall Q-value convergence during training}
+    \label{fig:qconv}
+\end{figure}
+
+\FloatBarrier
+
+\subsection{Discussion}
+
+Across all tested learning rates $\alpha$, the episode length remains roughly constant after the first few checkpoints.  
+At the beginning of training, the agent often ends quickly before learning a reasonable strategy, yielding short episodes.  
+After a few thousand episodes, behavior stabilizes.
+
+The Q-value convergence graphs show the $L_2$ distance between successive Q-tables.  
+
+\paragraph{$\alpha = 10^{-5}$ and $\alpha = 10^{-3}$}
+Updates are extremely small, so the curves stay low.  
+However, they do \emph{not converge to zero} even after 100{,}000 episodes.  
+Learning is too slow for convergence within the training horizon.
+
+\paragraph{$\alpha = 10^{-2}$}
+This learning rate performs the best.  
+Q-differences decrease rapidly and smoothly, with minimal noise at the bottom.  
+This indicates stable and consistent convergence and that the agent has settled on a strong policy.
+
+\paragraph{$\alpha = 10^{-1}$}
+Similar to $10^{-2}$ but with more variability near convergence.  
+Still converges reasonably well, but updates are noisier because of the larger step size.
+
+\paragraph{$\alpha = 5\times 10^{-1}$}
+This learning rate is too large.  
+Even though Q-differences initially fall quickly, the curve remains highly unstable and spiky.  
+The agent frequently overcorrects and revises Q-values, preventing stable convergence.
+
+\section{Reflections and Contributions}:
+\\ Kai: I contributed to the project by helping to formalize the problem mathematically, writing milestone 1 & 2, and collecting graphs and metrics for the discussion section for milestone 3. This project taught me a lot about Q-Learning and the process of applying a learning algorithm to a problem. One thing I’ve learned from this project is how important it is to write everything out mathematically. Even though the problem may seem simple, by cleanly writing out things like states, actions, and rewards, the implementation of the code becomes much easier. Lastly, the project also helped me understand the difficulties in adding complexity to an existing problem. Adding 3 players to the chopstick game would make some of the optimizations we did invalid, and would require a completely different approach (multiple Q-Tables).
+\\ Arul: future suggestions or advice:
+- think carefully about how you choose to represent states and actions. you may find that in simple games such as chopsticks there may be several states that seem different but actually have the same optimal action
+- make sure you really understand the mechanisms behind what you are doing (like understanding the RL agent behavior, the motivation behind the bellman update, why even a simplistic reward function can actually do the job). in the long run it will actually save you a lot of time (like our modified update + terminal reward function did). we were able to make optimizations and cleaner code after we understood these topics better
+- don’t be too prideful to use AI. it probably has a much better understanding of a very common topic like RL, and you should use that to make sure you really get the underlying ideas. at the same time don’t just pass code off to it because even writing a basic RL bot for a simple game like chopsticks was clearly a little too hard for it.
+\\Nikitha: I contributed to my team by helping brainstorm a concrete project idea for us, and I have also created, worked on, and submitted milestones 2 and 3.  A suggestion I would give for students who are working on this project would be to constantly review the RL concepts you have learnt in class and keep them in mind as you are progressing through your project. This would help you make wiser decisions when it comes to finalizing state and actions, and understanding the feasibility/"do-ability" of certain features and next steps you would like to have in your game. This project has contributed a lot to my understanding in RL. It has put me in an environment when I have to directly interact with RL implementation for a game, which have help me understand that maybe RL is as scary as it looks on paper or the lecture slides. It has increased my interest is getting involved in similar if not more complicated projects in the future.
+I have used GenAI for certain parts of the milestones where I was stuck on how to format so much information in a readable manner and how to incorporate images within text. It has helped with my showing me some formatting shortcuts in Latex.
+\\ Karim: Out of all the contributions I made to this project, I would like to highlight that I helped plan and organize the work by meeting with my group members to discuss project ideas and researching potential topics to ensure they were both interesting and appropriate for the class. These efforts directly supported the progress we made in the Milestone deliverables.I also contributed to Milestone 2 by writing portions of the code myself and merging them with what my teammates had implemented. I tested my logic locally to compare results with my team and verify that the code behaved as expected. Running these tests helped me confirm that our approaches were aligned and that the overall logic of the project was functioning correctly.
+Overall, I had a great experience working with my team on this RL project. This was my first time diving deeply into reinforcement learning, and I found it exciting how RL resembles building a life-simulation system, except we must define the rules and logic ourselves for the computer to understand the environment. I’ve always struggled with theory and algorithmic reasoning, but applying the course concepts directly in this project helped me understand RL much more clearly and learn how to translate theoretical ideas into working code.
+
 
 \end{document}
